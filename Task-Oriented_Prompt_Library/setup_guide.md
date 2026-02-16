@@ -3,7 +3,7 @@
 1. **Install the Python Library:**
 Open your terminal/command prompt and run:
 ```bash
-pip install openai colorama
+pip install openai colorama  
 
 ```
 
