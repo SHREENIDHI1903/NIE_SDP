@@ -1,0 +1,22 @@
+# Core Framework
+langchain
+langchain-community
+langchain-chroma
+langchain-huggingface
+langchain-ollama
+langgraph
+
+# Web Interface
+streamlit
+
+# PDF Processing
+pypdf
+
+# Vector Database and Embeddings
+chromadb
+sentence-transformers
+onnxruntime
+
+# Utility
+python-dotenv
+ollama
