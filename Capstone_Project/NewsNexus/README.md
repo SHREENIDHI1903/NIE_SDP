@@ -202,7 +202,3 @@ NewsNexus/
 ---
 
 **🎓 Education Note:** This project demonstrates the transition from *Prompt Engineering* (Day 1) to *Agentic Systems* (Day 6), providing a complete blueprint for modern AI development.
-
-```
-
-```
