@@ -1,12 +1,10 @@
----
-
 
 # 📰 NewsNexus: Autonomous Corporate Intelligence Agent
 ### Capstone Project | Student Development Program (SDP)
 
 **NewsNexus** is a local, privacy-first **Agentic AI System** designed to act as an automated corporate analyst. It autonomously researches topics using internal documents (PDFs) and a simulated web search, analyzes trends, and drafts professional HTML newsletters—all while keeping a human in the loop for final approval.
 
----
+
 
 ## 🏗️ Architecture Overview
 

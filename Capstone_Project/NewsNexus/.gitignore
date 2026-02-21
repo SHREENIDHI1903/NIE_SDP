@@ -12,8 +12,8 @@ env/
 .env
 
 # Project Data (Avoid checking in large PDFs or local databases)
-data/raw_pdfs/*
-!data/raw_pdfs/.gitkeep
+
+
 data/chroma_db/
 data/archive_memory/
 
