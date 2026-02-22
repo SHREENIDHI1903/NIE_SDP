@@ -5,7 +5,6 @@ import os
 sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
 
 from langchain_chroma import Chroma
-from langchain_huggingface import HuggingFaceEmbeddings
 
 # --- Configuration ---
 DB_PATH = r"D:\NIE_GENai\Capstone_Project\NewsNexus\data\chroma_db"
@@ -16,8 +15,9 @@ def retrieve_documents(query, k=4, keyword_filter=True):
     a simple keyword boosting filter (Hybrid Search Logic).
     """
     
-    # 1. Initialize the Embedding Model (Same as Ingestion)
-    embedding_model = HuggingFaceEmbeddings(model_name="all-MiniLM-L6-v2")
+    # 1. Initialize the Embedding Model (Switched to Ollama for stability)
+    from langchain_ollama import OllamaEmbeddings
+    embedding_model = OllamaEmbeddings(model="nomic-embed-text")
     
     # 2. Connect to the existing Vector Store
     vector_store = Chroma(

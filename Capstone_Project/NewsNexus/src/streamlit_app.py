@@ -11,6 +11,11 @@ from agents import app as agent_app  # Import the graph we built
 from memory_store import MemoryStore
 from langchain_core.messages import HumanMessage
 
+# --- Paths Configuration ---
+PROJECT_ROOT = r"D:\NIE_GENai\Capstone_Project\NewsNexus"
+DATA_PATH = os.path.join(PROJECT_ROOT, "data", "raw_pdfs")
+DB_PATH = os.path.join(PROJECT_ROOT, "data", "chroma_db")
+
 # --- Page Config ---
 st.set_page_config(page_title="NewsNexus AI", page_icon="📰", layout="wide")
 
@@ -29,12 +34,24 @@ if "messages" not in st.session_state:
     st.session_state.messages = []
 if "research_data" not in st.session_state:
     st.session_state.research_data = []
+if "chart_data" not in st.session_state:
+    st.session_state.chart_data = []
 if "thread_id" not in st.session_state:
     st.session_state.thread_id = f"session_{int(time.time())}"
 if "current_step" not in st.session_state:
     st.session_state.current_step = "idle" # idle, researching, reviewing, finished
 if "draft_content" not in st.session_state:
     st.session_state.draft_content = ""
+
+# --- PDF Export Utility ---
+def export_as_pdf(html_content):
+    from io import BytesIO
+    from xhtml2pdf import pisa
+    pdf_buffer = BytesIO()
+    pisa_status = pisa.CreatePDF(html_content, dest=pdf_buffer)
+    if pisa_status.err:
+        return None
+    return pdf_buffer.getvalue()
 
 # --- Sidebar: Data Management ---
 with st.sidebar:
@@ -43,28 +60,51 @@ with st.sidebar:
     st.divider()
     
     st.subheader("📂 Knowledge Base")
-    uploaded_file = st.file_uploader("Upload Industry Report (PDF)", type="pdf")
     
-    if uploaded_file:
-        # Save file locally
-        save_path = os.path.join("data/raw_pdfs", uploaded_file.name)
-        os.makedirs("data/raw_pdfs", exist_ok=True)
-        with open(save_path, "wb") as f:
-            f.write(uploaded_file.getbuffer())
-        st.success(f"Saved: {uploaded_file.name}")
+    # 1. Show existing files
+    existing_pdfs = []
+    if os.path.exists(DATA_PATH):
+        existing_pdfs = [f for f in os.listdir(DATA_PATH) if f.endswith(".pdf")]
+    
+    if existing_pdfs:
+        with st.expander(f"Documents in Library ({len(existing_pdfs)})", expanded=False):
+            for pdf in existing_pdfs:
+                st.write(f"📄 {pdf}")
+    else:
+        st.caption("No documents in library yet.")
+
+    st.divider()
+    
+    # 2. Upload new files
+    uploaded_files = st.file_uploader("Add New Reports (PDF)", type="pdf", accept_multiple_files=True)
+    
+    if uploaded_files:
+        for uploaded_file in uploaded_files:
+            save_path = os.path.join(DATA_PATH, uploaded_file.name)
+            os.makedirs(DATA_PATH, exist_ok=True)
+            with open(save_path, "wb") as f:
+                f.write(uploaded_file.getbuffer())
+        st.success(f"Uploaded {len(uploaded_files)} files!")
+        st.rerun() # Refresh to show in list
         
-        if st.button("🧠 Process & Embed PDF"):
-            with st.spinner("Chunking and Embedding... (This runs ingestion.py)"):
-                # Call the ingestion function directly
-                # Ensure ingestion.py is refactored to be callable or import logic here
+    if st.button("🧠 Build/Update Vector Index"):
+        if not existing_pdfs:
+            st.warning("Please upload at least one PDF first.")
+        else:
+            with st.spinner("Processing Library..."):
                 try:
-                    ingest_documents() 
-                    st.success("Vector Database Updated!")
+                    pages, chunks = ingest_documents() 
+                    st.success(f"Success! Processed {pages} pages into {chunks} chunks.")
                 except Exception as e:
                     st.error(f"Error: {e}")
 
     st.divider()
-    st.info("System Status: Ready\nModel: Llama 3.2 (Local)")
+    # Check system status
+    db_ready = os.path.exists(DB_PATH) and os.listdir(DB_PATH)
+    status_msg = "✅ Database: ACTIVE" if db_ready else "⚠️ Database: MISSING"
+    st.info(f"System Status: {status_msg}")
+    st.caption(f"Mode: {'Hybrid (PDF+Web)' if existing_pdfs else 'Web Search Only'}")
+    st.caption("LLM: Llama 3.2 (768-dim Ollama)")
 
 # --- Main Interface ---
 
@@ -75,19 +115,40 @@ st.divider()
 # Input Area
 topic = st.text_input("Enter Research Topic:", placeholder="e.g., 'Impact of Generative AI on Banking sector 2024'")
 
-if st.button("🚀 Start Agents") and topic:
+if st.button("🚀 Start Agents", disabled=st.session_state.current_step != "idle") and topic:
+    # --- SMART INITIALIZATION LOGIC ---
+    db_exists = os.path.exists(DB_PATH) and os.listdir(DB_PATH)
+    raw_pdfs_exist = os.path.exists(DATA_PATH) and any(f.endswith(".pdf") for f in os.listdir(DATA_PATH))
+    
+    if db_exists:
+        st.success("📂 Using existing Knowledge Base...")
+    elif raw_pdfs_exist:
+        with st.info("🔍 Indexing your library for the first time..."):
+            try:
+                pages, chunks = ingest_documents()
+                st.success(f"Library Indexed! ({pages} pages, {chunks} chunks)")
+            except Exception as e:
+                st.error(f"Auto-index failed: {e}")
+                st.stop()
+    else:
+        st.warning("🌐 No PDFs found. Proceeding with Web Search only.")
+    # -------------------------
+
     st.session_state.current_step = "researching"
     st.session_state.messages = [HumanMessage(content=topic)]
     st.session_state.research_data = []
     
     # Initialize Memory Store
-    mem_store = MemoryStore()
-    past_memory = mem_store.check_memory(topic)
+    try:
+        mem_store = MemoryStore()
+        with st.spinner("Checking historical archives..."):
+            past_memory = mem_store.check_memory(topic)
+    except Exception as e:
+        st.error(f"Memory Store failed: {e}")
+        st.stop()
     
     if "WARNING" in past_memory:
         st.warning(past_memory)
-    else:
-        st.success("No duplicates found in memory. Proceeding.")
 
 # --- Visualization Logic ---
 
@@ -104,63 +165,74 @@ if st.session_state.current_step == "researching":
 
     # Run the Graph Stream
     config = {"configurable": {"thread_id": st.session_state.thread_id}}
-    inputs = {"messages": st.session_state.messages, "research_data": []}
+    inputs = {"messages": st.session_state.messages, "research_data": [], "chart_data": []}
     
-    # We execute the graph step-by-step
     try:
-        # Stream events from the graph
         print(f"\n[Streamlit] Starting graph for topic: '{topic}'")
         for event in agent_app.stream(inputs, config):
-            print(f"[Streamlit] Event received: {list(event.keys())}")
-            
-            # --- Visualize Researcher ---
             if "Researcher" in event:
                 research_output = event["Researcher"]
-                findings = research_output.get("research_data", [])
-                st.session_state.research_data = findings # Save for display
-                
-                research_status.write(f"Found {len(findings)} data points.")
-                for item in findings:
-                    with research_status.expander("View Finding"):
-                        st.code(item)
-                research_status.update(label="Researcher: Complete", state="complete", expanded=False)
-                analyst_status.update(expanded=True) # Open next box
+                st.session_state.research_data = research_output.get("research_data", [])
+                with research_status:
+                    for item in st.session_state.research_data:
+                        st.markdown(f"--- \n{item}")
+                research_status.update(label=f"Researcher: Found {len(st.session_state.research_data)} items", state="complete", expanded=False)
+                analyst_status.update(expanded=True)
 
-            # --- Visualize Analyst ---
             if "Analyst" in event:
                 analyst_output = event["Analyst"]
-                insight = analyst_output["messages"][-1].content
-                analyst_status.write("Trends Identified:")
-                analyst_status.info(insight[:200] + "...")
+                st.session_state.chart_data = analyst_output.get("chart_data", [])
+                with analyst_status:
+                    st.write("Identified Trends & Extracted Data:")
+                    if st.session_state.chart_data:
+                        st.json(st.session_state.chart_data)
+                    else:
+                        st.write("No numeric trends found.")
                 analyst_status.update(label="Analyst: Complete", state="complete", expanded=False)
                 writer_status.update(expanded=True)
 
-            # --- Visualize Writer ---
             if "Writer" in event:
                 writer_output = event["Writer"]
-                draft = writer_output["messages"][-1].content
-                st.session_state.draft_content = draft
-                writer_status.write("Draft Generated.")
+                st.session_state.draft_content = writer_output["messages"][-1].content
+                with writer_status:
+                    st.success("Draft Generated!")
+                    st.code(st.session_state.draft_content[:200] + "...", language="html")
                 writer_status.update(label="Writer: Complete", state="complete")
         
-        # Move to Review Stage
         st.session_state.current_step = "reviewing"
         st.rerun()
-
     except Exception as e:
-        print(f"[Streamlit] Error during graph execution: {str(e)}")
         st.error(f"Execution Error: {e}")
-        import traceback
-        st.code(traceback.format_exc())
 
 
 # --- Review Stage (Human-in-the-Loop) ---
 if st.session_state.current_step == "reviewing":
     st.subheader("📝 Draft Review")
     
-    # Display HTML Preview
-    with st.expander("View Rendered HTML", expanded=True):
-        st.components.v1.html(st.session_state.draft_content, height=600, scrolling=True)
+    # Interactive Visualization
+    if st.session_state.chart_data:
+        import plotly.express as px
+        import pandas as pd
+        st.markdown("#### 📊 Extracted Trend Analysis")
+        df = pd.DataFrame(st.session_state.chart_data)
+        fig = px.bar(df, x="label", y="value", title="Data Visualization", color="label")
+        st.plotly_chart(fig, use_container_width=True)
+
+    # Tabs for different views
+    tab1, tab2 = st.tabs(["📄 Newsletter Draft", "🔍 Raw Research Log"])
+    
+    with tab1:
+        # Display HTML Preview
+        with st.expander("View Rendered HTML", expanded=True):
+            st.components.v1.html(st.session_state.draft_content, height=600, scrolling=True)
+            
+    with tab2:
+        st.markdown("### 🕵️ Raw Research Findings")
+        if st.session_state.research_data:
+            for i, data in enumerate(st.session_state.research_data):
+                st.info(f"**Finding {i+1}:**\n\n{data}")
+        else:
+            st.warning("No raw research data found. The agents might have relied on internal knowledge.")
     
     col_a, col_b = st.columns([3, 1])
     
@@ -168,39 +240,23 @@ if st.session_state.current_step == "reviewing":
         feedback = st.text_input("Feedback (Leave empty to approve):", placeholder="e.g., 'Make the tone more formal'")
     
     with col_b:
-        st.write("") # Spacer
+        st.write("") 
         st.write("") 
         if st.button("Submit Decision"):
             config = {"configurable": {"thread_id": st.session_state.thread_id}}
-            
             if feedback:
-                # REVISION LOOP
-                st.info("Sending feedback to Writer...")
                 agent_app.update_state(config, {"messages": [HumanMessage(content=feedback)]})
-                
-                # Resume Graph for Revision
-                # Note: We need to handle the stream again similar to above, 
-                # but for simplicity, we just run it and rerun the page
                 for event in agent_app.stream(None, config):
-                    pass # Let logic handle it
-                
-                # Fetch new state
+                    pass
                 state = agent_app.get_state(config)
                 st.session_state.draft_content = state.values['messages'][-1].content
-                st.success("Draft Revised!")
-                time.sleep(1)
+                st.session_state.chart_data = state.values.get('chart_data', [])
                 st.rerun()
-                
             else:
-                # APPROVAL
                 st.session_state.current_step = "finished"
-                
-                # Save to Memory
                 mem_store = MemoryStore()
-                # Use the original topic if available, else generic
                 topic_key = st.session_state.messages[0].content 
                 mem_store.save_memory(topic_key, st.session_state.draft_content)
-                
                 st.rerun()
 
 # --- Final Stage ---
@@ -208,29 +264,33 @@ if st.session_state.current_step == "finished":
     st.balloons()
     st.markdown('<div class="success-box">✅ Newsletter Approved & Archived!</div>', unsafe_allow_html=True)
     
-    # Save to File
-    filename = f"newsletter_{int(time.time())}.html"
-    with open(filename, "w", encoding="utf-8") as f:
-        f.write(st.session_state.draft_content)
-    
-    col1, col2 = st.columns(2)
+    # Export Options
+    col1, col2, col3 = st.columns(3)
     
     with col1:
-        # Download Button
         st.download_button(
-            label="Download HTML File",
+            label="📄 Download HTML",
             data=st.session_state.draft_content,
-            file_name=filename,
+            file_name=f"newsletter_{int(time.time())}.html",
             mime="text/html"
         )
     
     with col2:
-        # Link to open (User needs to open manually due to browser security, or we serve it)
-        st.info(f"File saved locally as: {filename}")
-        
+        pdf_data = export_as_pdf(st.session_state.draft_content)
+        if pdf_data:
+            st.download_button(
+                label="📁 Download PDF",
+                data=pdf_data,
+                file_name=f"newsletter_{int(time.time())}.pdf",
+                mime="application/pdf"
+            )
+        else:
+            st.error("PDF Export failed.")
+
+    with col3:
+        if st.button("🔄 New Research"):
+            st.session_state.current_step = "idle"
+            st.rerun()
+
     st.markdown("### Final Output Preview")
     st.components.v1.html(st.session_state.draft_content, height=800, scrolling=True)
-    
-    if st.button("Start New Research"):
-        st.session_state.current_step = "idle"
-        st.rerun()

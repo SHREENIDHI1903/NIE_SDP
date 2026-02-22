@@ -16,7 +16,8 @@ from agents import (
     writer_node, 
     llm_with_tools, 
     lookup_policy_docs, 
-    web_search_stub
+    web_search_stub,
+    rss_feed_search
 )
 
 # Initialize Memory
@@ -36,16 +37,17 @@ def researcher_with_memory_node(state: AgentState):
     memory_context = memory_store.check_memory(user_topic)
     print(f"   > Memory Report: {memory_context}")
     
-    # 2. Update System Prompt with Memory Context
+    # 2. Update System Prompt with Memory Context (Synced with agents.py)
     system_prompt = f"""You are a data gatherer. 
+    The current date is February 22, 2026.
     Use tools to find facts about the user's topic.
+    Do not analyze, just report facts.
+    ALWAYS use 'lookup_policy_docs', 'web_search_stub', and 'rss_feed_search' to gather a mix of PDF, Web, and Industry news.
     
     CRITICAL MEMORY CONTEXT:
     {memory_context}
     
-    If the memory says we already covered this, STOP and report that.
-    Otherwise, use 'lookup_policy_docs' and 'web_search_stub' to gather new facts.
-    """
+    If the memory says we already covered this recently, mention it in your findings and prioritize finding NEW information."""
     
     # 3. Standard Agent Execution (Same as before)
     response = llm_with_tools.invoke([SystemMessage(content=system_prompt), last_message])
@@ -61,16 +63,23 @@ def researcher_with_memory_node(state: AgentState):
             
             q = tool_args.get('query')
             if isinstance(q, dict): q = q.get('value', str(q))
+            
+            # Fallback for Llama 3.2 schema confusion
+            if not q or q == "{'type': 'string'}":
+                q = tool_args.get('__arg1', tool_args.get('input', user_topic))
+                
             q = str(q)
 
             if tool_name == "lookup_policy_docs":
                 res = lookup_policy_docs.invoke(q)
             elif tool_name == "web_search_stub":
                 res = web_search_stub.invoke(q)
+            elif tool_name == "rss_feed_search":
+                res = rss_feed_search.invoke(q)
             
             research_findings.append(f"Source: {tool_name}\nData: {res}")
     else:
-        # If the agent decided NOT to call tools (maybe because of memory warning), we respect that.
+        # If the agent decided NOT to call tools, we report that.
         research_findings.append(f"Agent decided not to research. Reason: {response.content}")
 
     return {"messages": [response], "research_data": research_findings}

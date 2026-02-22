@@ -5,19 +5,20 @@ from langchain_core.messages import BaseMessage, HumanMessage, SystemMessage
 from langgraph.graph import StateGraph, END
 
 # Import our tools and LLM setup from Phase 2
-from tools import get_llm_with_tools, lookup_policy_docs, web_search_stub
+from tools import get_llm_with_tools, lookup_policy_docs, web_search_stub, rss_feed_search
 
-# --- 1. Define the State (Module 5, Ch 1: State Management) ---
+# --- 1. Define the State (Enhanced for Visualization) ---
 # AgentState is a custom TypedDict that defines the structure of data flowing between nodes.
 class AgentState(TypedDict):
     # operator.add ensures we append new messages instead of overwriting existing ones.
     messages: Annotated[List[BaseMessage], operator.add]
     research_data: List[str]
+    chart_data: List[dict] # New: Stores structured data for Plotly
 
 # Initialize Resources
 llm, llm_with_tools, tools = get_llm_with_tools()
 
-# --- 2. Define the Nodes / Agent Personas (Step 3.1) ---
+# --- 2. Define the Nodes / Agent Personas ---
 
 def researcher_node(state: AgentState):
     """
@@ -29,10 +30,10 @@ def researcher_node(state: AgentState):
     
     # Force the researcher persona via system prompt
     sys_msg = SystemMessage(content="""You are a data gatherer. 
+    The current date is February 22, 2026. 
     Use tools to find facts about the user's topic. 
     Do not analyze, just report facts.
-    ALWAYS use the 'lookup_policy_docs' tool for historical data.
-    ALWAYS use the 'web_search_stub' tool for recent news.""")
+    ALWAYS use 'lookup_policy_docs', 'web_search_stub', and 'rss_feed_search' to gather a mix of PDF, Web, and Industry news.""")
     
     # Invoke model
     response = llm_with_tools.invoke([sys_msg, last_message])
@@ -53,6 +54,11 @@ def researcher_node(state: AgentState):
                 # If nested like {'value': 'search term'} or {'type': 'string', ...}
                 q = q.get('value', str(q))
             
+            # Fallback for Llama 3.2 schema confusion
+            if not q or q == "{'type': 'string'}":
+                # Check if the LLM provided more info in the args
+                q = tool_args.get('__arg1', tool_args.get('input', 'AI Trends 2026'))
+            
             # Convert to string just in case
             q = str(q)
             # -------------------------------
@@ -61,10 +67,12 @@ def researcher_node(state: AgentState):
                 res = lookup_policy_docs.invoke(q)
             elif tool_name == "web_search_stub":
                 res = web_search_stub.invoke(q)
+            elif tool_name == "rss_feed_search":
+                res = rss_feed_search.invoke(q)
             
             research_findings.append(f"Source: {tool_name}\nData: {res}")
     else:
-        research_findings.append("No specific data found, relying on internal knowledge.")
+        research_findings.append("AGENT: The researcher agent did not call any specific tools for this query. This might happen if the topic is too broad or if the model thinks it has sufficient internal knowledge.")
 
     print(f"   > Researcher found {len(research_findings)} items.")
     return {
@@ -74,8 +82,8 @@ def researcher_node(state: AgentState):
 
 def analyst_node(state: AgentState):
     """
-    Agent 2: Analyst
-    Responsibility: Identify key trends from the raw data.
+    Agent 2: Analyst (Enhanced with Data Extraction)
+    Responsibility: Identify key trends AND extract numeric data for plotting.
     """
     print("\n--- [Agent: Analyst] is identifying trends ---")
     raw_data = "\n\n".join(state["research_data"])
@@ -83,8 +91,14 @@ def analyst_node(state: AgentState):
     # Note: We use a standard LLM invocation here (no tools bound)
     # because the Analyst only needs to think, not act.
     prompt = f"""You are a senior analyst. 
-    Read the following Researcher's facts and identify 3 key trends. 
-    Cite your sources based strictly on the provided data.
+    1. Identify 3 key trends from the raw data.
+    2. DATA VIZ EXTRACTION: Look for REAL numeric trends (percentages, market sizes, years).
+       If you find numeric data, extract it into a JSON block like this:
+       ```json
+       [{{ "label": "2024", "value": 50 }}, {{ "label": "2025", "value": 75 }}]
+       ```
+    
+    CRITICAL: If the raw data is empty or insufficient, DO NOT make up hypothetical numbers. Only extract data that is EXPLICITLY present.
     
     RAW DATA:
     {raw_data}
@@ -93,20 +107,36 @@ def analyst_node(state: AgentState):
     print(f"   > Analyst node invoking base LLM with {len(raw_data)} chars of raw data...")
     response = llm.invoke(prompt)
     print(f"   > Analyst response received.")
-    return {"messages": [response]}
+    content = response.content
+    
+    # Extract JSON if present for Plotly
+    chart_data = []
+    import json
+    import re
+    json_match = re.search(r'```json\n(.*?)\n```', content, re.DOTALL)
+    if json_match:
+        try:
+            chart_data = json.loads(json_match.group(1))
+        except:
+            pass
+            
+    return {"messages": [response], "chart_data": chart_data}
 
 def writer_node(state: AgentState):
     """
-    Agent 3: Writer
-    Responsibility: Format the analysis into a Newsletter.
+    Agent 3: Writer (Enhanced for Citations)
+    Responsibility: Format analysis into HTML while preserving deep links.
     """
     print("\n--- [Agent: Writer] is formatting the newsletter ---")
     analyst_insight = state["messages"][-1].content
     
     prompt = f"""You are a newsletter editor. 
-    Compile the following trends into a polite, professional HTML format.
+    Compile the trends into a polite, professional HTML format.
     
-    TRENDS:
+    CRITICAL: Preserve all links provided in the analysis (e.g., [Title](URL)).
+    Format them as clickable <a> tags in the HTML.
+    
+    TRENDS & ANALYSIS:
     {analyst_insight}
     """
     
@@ -115,7 +145,7 @@ def writer_node(state: AgentState):
     print(f"   > Writer response received.")
     return {"messages": [response]}
 
-# --- 3. Build the Graph / State Machine (Step 3.2) ---
+# --- 3. Build the Graph ---
 # Use StateGraph to define the nodes and how they connect.
 workflow = StateGraph(AgentState)
 

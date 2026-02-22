@@ -20,3 +20,7 @@ onnxruntime
 # Utility
 python-dotenv
 ollama
+duckduckgo-search
+plotly
+feedparser
+xhtml2pdf

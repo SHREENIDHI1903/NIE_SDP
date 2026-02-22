@@ -1,53 +1,59 @@
-
 # 📰 NewsNexus: Autonomous Corporate Intelligence Agent
-### Capstone Project | Student Development Program (SDP)
+### Capstone Project | Professional Intelligence Edition
 
-**NewsNexus** is a local, privacy-first **Agentic AI System** designed to act as an automated corporate analyst. It autonomously researches topics using internal documents (PDFs) and a simulated web search, analyzes trends, and drafts professional HTML newsletters—all while keeping a human in the loop for final approval.
+**NewsNexus** is a local, privacy-first **Agentic AI System** designed to act as an automated corporate analyst. It autonomously researches topics using internal documents (PDFs), live web search, and targeted industry RSS feeds. It analyzes trends, generates interactive visualizations, and drafts professional reports available for HTML and PDF export.
 
-
+---
 
 ## 🏗️ Architecture Overview
 
-This project was built in **5 Phases**, moving from basic RAG to advanced Multi-Agent Orchestration.
+The system uses a **Multi-Agent Orchestration** flow powered by **LangGraph**, enabling complex reasoning and human-in-the-loop validation.
 
-**The "CPU-Friendly" Tech Stack:**
-* **LLM Engine:** [Ollama](https://ollama.com/) (running Llama 3.2 or Qwen 2.5)
-* **Orchestration:** [LangGraph](https://langchain-ai.github.io/langgraph/) (Stateful Multi-Agent Workflows)
-* **Vector Database:** [ChromaDB](https://www.trychroma.com/) (Local persistent storage)
-* **Embeddings:** [HuggingFace](https://huggingface.co/sentence-transformers/all-MiniLM-L6-v2) (Sentence Transformers)
-* **Language:** Python 3.10+
+**The "Stability-First" Tech Stack:**
+* **LLM Engine:** [Ollama](https://ollama.com/) (Llama 3.2 3B)
+* **Embeddings Engine:** [Ollama](https://ollama.com/) (**nomic-embed-text**) - *Migrated from local Torch for Windows stability.*
+* **Orchestration:** [LangGraph](https://langchain-ai.github.io/langgraph/)
+* **Vector Database:** [ChromaDB](https://www.trychroma.com/)
+* **UI Interface:** [Streamlit](https://streamlit.io/)
+* **Search Tools:** DuckDuckGo (Live Search), Feedparser (RSS), RAG (PDFs)
 
 ---
 
 ## 🚀 Setup & Installation
 
 ### 1. Prerequisites
-* Python installed.
+* Python 3.10+
 * [Ollama](https://ollama.com/) installed and running.
 
 ### 2. Environment Setup
 ```bash
 # Clone the repository (or create folder)
-mkdir NewsNexus
-cd NewsNexus
+git clone https://github.com/SHREENIDHI1903/NIE_SDP.git
+cd NIE_SDP/NewsNexus
 
 # Create virtual environment
 python -m venv venv
-source venv/bin/activate  # Windows: venv\Scripts\activate
+venv\Scripts\activate  # Windows
 
 # Install dependencies
 pip install -r requirements.txt
-
 ```
 
-### 3. Model Pull
-
-We need a model capable of **Function Calling**.
-
+### 3. Mandatory Model Pull
+You must pull both the **LLM** and the **Embedding Model** to ensure stability:
 ```bash
 ollama pull llama3.2
-
+ollama pull nomic-embed-text
 ```
+
+---
+
+## 🌟 Pro Edition Features
+
+*   **📊 Interactive Visualizations**: Automatic detection of numeric trends rendered as **Plotly Bar Charts**.
+*   **📡 Multi-Source Research**: Combines PDFs with live DuckDuckGo results and targeted RSS feeds (MIT Tech Review, OpenAI).
+*   **📄 Professional Export**: Download final reports as **PDF** or HTML files.
+*   **🔗 Citation Deep-Links**: Clickable links for both web sources and local PDF files for full transparency.
 
 ---
 
@@ -57,20 +63,16 @@ ollama pull llama3.2
 
 **Goal:** Give the AI "Long-term Knowledge" by ingesting PDF reports.
 
-* **Concept:** We use **Recursive Character Chunking** to split PDFs into manageable pieces and **Sentence Transformers** to convert them into vectors.
+* **Concept:** We use **Recursive Character Chunking** and **Ollama Embeddings** to turn PDFs into searchable vectors.
 * **Key Files:**
 * `src/ingestion.py`: Reads PDFs from `data/raw_pdfs/` and saves vectors to `data/chroma_db/`.
-* `src/retrieval.py`: Performs Semantic Search + Keyword Boosting (Hybrid Search).
-
+* `src/retrieval.py`: Performs Semantic Search + Keyword Boosting.
 
 * **Run it:**
 ```bash
 # Put a PDF in data/raw_pdfs first!
 python src/ingestion.py
-
 ```
-
-
 
 ### 🔹 Phase 2: Tool Definition (Function Calling)
 
@@ -78,84 +80,38 @@ python src/ingestion.py
 
 * **Concept:** We define Python functions that the LLM can "decide" to call.
 * **The Tools:**
-1. `lookup_policy_docs`: Queries the Chroma vector DB.
-2. `web_search_stub`: A simulated internet search (returns deterministic JSON for workshop stability).
-
+1. `lookup_policy_docs`: Queries the Chroma vector DB with deep-link support.
+2. `web_search_stub`: Performs a **Live DuckDuckGo Search** for real-time news.
+3. `rss_feed_search`: Scans industry feeds for specialized technical insights.
 
 * **Key File:** `src/tools.py`
-* **Run it:**
-```bash
-python src/tools.py
-# Output: You should see the Agent choosing different tools based on your query.
-
-```
-
-
 
 ### 🔹 Phase 3: Multi-Agent Orchestration
 
 **Goal:** Create a team of specialized agents working in a pipeline.
 
-* **Concept:** Using **LangGraph** to build a State Machine (DAG).
+* **Concept:** Using **LangGraph** to build a State Machine.
 * **The Team:**
-* 🕵️ **Researcher:** Uses tools to find raw data.
-* 🧠 **Analyst:** Reads raw data and identifies 3 key trends.
-* ✍️ **Writer:** Formats trends into an HTML newsletter.
-
+* 🕵️ **Researcher:** Gathers data from PDF, Web, and RSS.
+* 🧠 **Analyst:** Identifies trends and extracts numeric data for charts.
+* ✍️ **Writer:** Formats trends into professional HTML while preserving citations.
 
 * **Flow:** `Researcher -> Analyst -> Writer -> END`
 * **Key File:** `src/agents.py`
-* **Run it:**
-```bash
-python src/agents.py
-
-```
-
-
 
 ### 🔹 Phase 4: Human-in-the-Loop (HITL)
 
 **Goal:** Add a safety check before publishing.
 
-* **Concept:** Using **Interrupts** and **MemorySaver**. The graph pauses execution to wait for user input.
-* **The Workflow:**
-1. Agents generate a draft.
-2. System PAUSES at the "Approval Gate".
-3. Human provides feedback (e.g., "Too long, rewrite it").
-4. System routes back to the **Writer** to fix it.
-
-
+* **Concept:** The graph pauses at an "Approval Gate," allowing humans to provide feedback for revisions.
 * **Key File:** `src/phase4_human_loop.py`
-* **Run it:**
-```bash
-python src/phase4_human_loop.py
 
-```
-
-
-
-### 🔹 Phase 5: Memory & Persistence (Final)
+### 🔹 Phase 5: Memory & Persistence
 
 **Goal:** Prevent the AI from repeating itself.
 
-* **Concept:** We add a second Vector Store (`archive_memory`) to store *generated* newsletters. The Researcher checks this before starting work.
-* **Mechanism:**
-* *Before Researching:* "Have I written about this topic in the last 7 days?"
-* *After Approval:* Save the final HTML to the archive.
-
-
-* **Key Files:**
-* `src/memory_store.py`: Manages the archive database.
-* `src/phase5_final.py`: The complete application.
-
-
-* **Run it:**
-```bash
-python src/phase5_final.py
-
-```
-
-
+* **Concept:** Uses an `archive_memory` store to check if a research topic has been covered recently.
+* **Key Files:** `src/memory_store.py` and `src/phase5_final.py`.
 
 ---
 
@@ -163,42 +119,43 @@ python src/phase5_final.py
 
 ```text
 NewsNexus/
+├── .streamlit/              # Launch Stability Config
 ├── data/
 │   ├── raw_pdfs/            # Drop your PDFs here
-│   ├── chroma_db/           # Created by ingestion.py (Knowledge Base)
-│   └── archive_memory/      # Created by phase5_final.py (Long-term Memory)
+│   ├── chroma_db/           # Knowledge Base (Vector DB)
+│   └── archive_memory/      # Long-term Memory
 ├── src/
-│   ├── agents.py            # The Agent Graph Definitions
-│   ├── ingestion.py         # PDF -> Vector Logic
-│   ├── retrieval.py         # Search Logic
-│   ├── tools.py             # Tool Definitions (Search Stub, etc.)
-│   ├── memory_store.py      # Archive Logic
-│   ├── phase4_human_loop.py # HITL Script
-│   └── phase5_final.py      # FINAL CAPSTONE APPLICATION
-├── requirements.txt         # Dependencies
-└── README.md                # This file
-
+│   ├── streamlit_app.py     # MAIN APP ENTRY POINT
+│   ├── agents.py            # Agent Graph Definitions
+│   ├── ingestion.py         # PDF Ingestion Logic
+│   ├── retrieval.py         # Search & Retrieval Logic
+│   ├── tools.py             # Tools (Web, RSS, RAG)
+│   └── memory_store.py      # Archive/Memory Management
+└── requirements.txt         # Dependencies
 ```
+
+---
+
+## 🎮 How to Run
+
+1. **Start the UI:**
+   ```bash
+   cd src
+   streamlit run streamlit_app.py
+   ```
+2. **Setup Library**: Drop PDFs into the sidebar to build your knowledge base.
+3. **Research**: Enter a topic like "AI Trends in 2026" and watch the agents collaborate!
 
 ---
 
 ## ⚠️ Troubleshooting
 
-**1. "Registry... does not support tools"**
+**1. "Disconnect" Errors on Windows**
+* *Fix:* Ensure you are running the app from the `src/` folder. I have added a configuration in `src/.streamlit/config.toml` that disables the file watcher to prevent disconnects during database updates.
 
-* *Cause:* You are using a model like `gemma:2b` or `llama2`.
-* *Fix:* Run `ollama pull llama3.2` and update your code to use `model="llama3.2"`.
-
-**2. "No specific data found"**
-
-* *Cause:* The `web_search_stub` in `tools.py` has a limited mock database.
-* *Fix:* Open `src/tools.py` and add your topic to the `mock_database` dictionary, or rely on the fallback message.
-
-**3. "ChromaDB errors"**
-
-* *Cause:* Version mismatch or file lock.
-* *Fix:* Delete the `data/chroma_db` folder and re-run `python src/ingestion.py`.
+**2. "Torch/DLL" Error**
+* *Fix:* We have migrated the system to **Ollama Embeddings**. Ensure you have run `ollama pull nomic-embed-text`.
 
 ---
 
-**🎓 Education Note:** This project demonstrates the transition from *Prompt Engineering* (Day 1) to *Agentic Systems* (Day 6), providing a complete blueprint for modern AI development.
+**🎓 Education Note:** This project demonstrates a production-oriented transition from basic RAG to a tool-equipped **Agentic Workflow**, providing a blueprint for modern AI development.

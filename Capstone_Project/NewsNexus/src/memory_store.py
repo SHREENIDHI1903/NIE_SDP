@@ -1,6 +1,5 @@
 import os
 from datetime import datetime
-from langchain_huggingface import HuggingFaceEmbeddings
 from langchain_chroma import Chroma
 from langchain_core.documents import Document
 
@@ -10,10 +9,11 @@ COLLECTION_NAME = "newsletter_archive"
 
 class MemoryStore:
     def __init__(self):
-        # Initialize the same embedding model we used for RAG
-        self.embedding_fn = HuggingFaceEmbeddings(model_name="all-MiniLM-L6-v2")
+        # Initialize Ollama Embeddings for stability (nomic-embed-text)
+        from langchain_ollama import OllamaEmbeddings
+        self.embedding_fn = OllamaEmbeddings(model="nomic-embed-text")
         
-        # Use LangChain's Chroma wrapper for consistency and to avoid default embedding issues
+        # Connection to Archive Database
         self.vector_store = Chroma(
             collection_name=COLLECTION_NAME,
             embedding_function=self.embedding_fn,
