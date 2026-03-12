@@ -54,6 +54,7 @@ ollama pull nomic-embed-text
 *   **📡 Multi-Source Research**: Combines PDFs with live DuckDuckGo results and targeted RSS feeds (MIT Tech Review, OpenAI).
 *   **📄 Professional Export**: Download final reports as **PDF** or HTML files.
 *   **🔗 Citation Deep-Links**: Clickable links for both web sources and local PDF files for full transparency.
+*   **🛡️ Execution Stability**: Automatic button disabling during active research cycles to prevent duplicate agent runs and UI state corruption.
 
 ---
 

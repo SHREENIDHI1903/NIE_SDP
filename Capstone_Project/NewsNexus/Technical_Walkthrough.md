@@ -22,6 +22,8 @@ This document provides a deep dive into the NewsNexus codebase. Each script is e
 *   **Lines 17-21**: Connects to the existing Chroma database at `DB_PATH`.
 *   **Line 27**: `similarity_search_with_score`. This is the core RAG step. It converts the user's question into a vector and finds the "closest" matches in the database.
 *   **Lines 29-32**: Returning the top `k` most similar snippets for the LLM to read.
+*   **🔗 Citation Deep-Links**: Clickable links for both web sources and local PDF files for full transparency.
+*   **🛡️ Execution Stability**: Automatic button disabling during active research cycles to prevent duplicate agent runs.
 
 ---
 
@@ -78,6 +80,7 @@ This document provides a deep dive into the NewsNexus codebase. Each script is e
 *   **`st.sidebar`**: Displays the Knowledge Base status and all PDFs found in your data folder.
 *   **`ingest_documents` trigger**: Detects if the database is missing and automatically runs the ingestion logic with a loading bar.
 *   **The Orchestration Loop**: Manages the multi-step state machine (Researching -> Analyzing -> Review).
+*   **Stability: Button Debouncing**: Included logic to disable the "Start Agents" and "Build/Update Index" buttons when a process is already running (`disabled=st.session_state.current_step != "idle"`) to prevent multiple simultaneous execution cycles.
 *   **Visualization**: Uses `st.plotly_chart` to render any data extracted by the Analyst node.
 *   **PDF Export**: Uses `xhtml2pdf` to convert the final HTML newsletter into a downloadable PDF document.
 

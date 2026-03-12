@@ -1,2 +1,11 @@
 [server]
 fileWatcherType = "none"
+runOnSave = false
+maxMessageSize = 1000
+enableWebsocketCompression = false
+scriptRunTimeout = 3600
+headless = true
+address = "localhost"
+
+[browser]
+gatherUsageStats = false

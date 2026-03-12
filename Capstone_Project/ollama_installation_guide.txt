@@ -1,0 +1,52 @@
+OLLAMA INSTALLATION GUIDE FOR WINDOWS
+====================================
+
+Follow these steps to install and run Ollama on your Windows system.
+
+1. DOWNLOAD THE INSTALLER
+-------------------------
+- Visit the official Ollama website: https://ollama.com
+- Click on the "Download" button.
+- Choose "Download for Windows".
+- This will download a file named `OllamaSetup.exe`.
+
+2. RUN THE INSTALLER
+--------------------
+- Locate the `OllamaSetup.exe` file in your Downloads folder.
+- Double-click to run it.
+- If Windows Defender SmartScreen appears, click "More info" and then "Run anyway".
+- Click "Install" and follow the simple on-screen instructions.
+- The installer will automatically add Ollama to your system PATH.
+
+3. VERIFY INSTALLATION
+----------------------
+- Open a new terminal (Windows PowerShell or Command Prompt).
+- Type the following command and press Enter:
+    ollama --version
+- If successful, you will see the version number (e.g., "ollama version 0.5.11").
+
+4. DOWNLOAD AND RUN MODELS
+--------------------------
+- To start using an AI model, you need to "pull" (download) it first.
+- Run the following commands in your terminal to download the recommended models:
+
+    ollama pull llama3.2
+    ollama pull nomic-embed-text
+
+- To chat with Llama 3.2, type:
+    ollama run llama3.2
+- To exit the chat, type `/bye` and press Enter.
+
+5. PERFORMANCE TIPS (GPU)
+-------------------------
+- Ollama works best with an NVIDIA GPU.
+- Ensure your NVIDIA drivers are up to date for the best performance.
+- If no compatible GPU is found, Ollama will automatically switch to CPU mode (which is slower).
+
+6. HARDWARE REQUIREMENTS
+------------------------
+- RAM: Minimum 8GB recommended.
+- Storage: At least 4GB for the software, plus space for models (Llama 3 is ~4.7GB).
+
+------------------------------------
+Guide created on: 2026-03-12

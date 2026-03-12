@@ -22,61 +22,75 @@ llm, llm_with_tools, tools = get_llm_with_tools()
 
 def researcher_node(state: AgentState):
     """
-    Agent 1: Researcher
-    Responsibility: Look up information using tools.
+    Agent 1: Researcher (Enhanced with Dynamic Orchestration)
+    Responsibility: Create an elaborate research plan and execute detailed sub-queries.
     """
-    print("\n--- [Agent: Researcher] is gathering data ---")
+    print("\n--- [Agent: Researcher] is gathering comprehensive data ---")
     last_message = state["messages"][-1]
+    topic = last_message.content
+
+    print(f"   > Topic: {topic}")
     
-    # Force the researcher persona via system prompt
-    sys_msg = SystemMessage(content="""You are a data gatherer. 
-    The current date is February 22, 2026. 
-    Use tools to find facts about the user's topic. 
-    Do not analyze, just report facts.
-    ALWAYS use 'lookup_policy_docs', 'web_search_stub', and 'rss_feed_search' to gather a mix of PDF, Web, and Industry news.""")
+    # 1. Ask the LLM to break down the topic into an advanced research plan
+    plan_prompt = f"""You are an elite Research Director. 
+The user wants an elaborate and advanced level report on: '{topic}'.
+Break this topic down into exactly 3 specific, diverse search queries that cover different angles (e.g., technical, market, news).
+Just output the 3 queries separated by a pipe character (|). Do not include any other text or explanation."""
     
-    # Invoke model
-    response = llm_with_tools.invoke([sys_msg, last_message])
-    
+    try:
+        plan_response = llm.invoke(plan_prompt)
+        content = plan_response.content.replace('\n', '')
+        queries = [q.strip() for q in content.split('|') if q.strip()]
+        if len(queries) < 1: 
+            queries = [topic, f"{topic} latest news", f"{topic} technical analysis"]
+    except Exception as e:
+        print(f"   > Plan generation failed: {e}. Using fallbacks.")
+        queries = [topic, f"{topic} latest news", f"{topic} technical analysis"]
+
+    # Ensure we max out at 3 to save time but remain elaborate
+    queries = queries[:3]
+    print(f"   > Research Plan Queries: {queries}")
+
     research_findings = []
     
-    # Execute Tools if requested by the LLM
-    if hasattr(response, 'tool_calls') and response.tool_calls:
-        for tool_call in response.tool_calls:
-            tool_name = tool_call["name"]
-            tool_args = tool_call["args"]
-            print(f"   > Executing Tool: {tool_name}")
+    # 2. Iterate through queries and force comprehensive data gathering using our tools directly
+    for i, q in enumerate(queries, 1):
+        print(f"   > [Executing Phase {i}/3] Searching for angle: {q}")
+        
+        # Web Search
+        try:
+            web_res = web_search_stub.invoke(q)
+            if "0 results" not in web_res and "Error" not in web_res:
+                research_findings.append(f"Source: Web Search (Query: {q})\nData: {web_res}")
+        except Exception as e:
+            print(f"     > Web Search error: {e}")
             
-            # --- ARGUMENT CLEANING LOGIC ---
-            # Extract the actual string from the dictionary
-            q = tool_args.get('query')
-            if isinstance(q, dict): 
-                # If nested like {'value': 'search term'} or {'type': 'string', ...}
-                q = q.get('value', str(q))
+        # RSS Search
+        try:
+            rss_res = rss_feed_search.invoke(q)
+            if "No matching" not in rss_res:
+                research_findings.append(f"Source: RSS Feeds (Query: {q})\nData: {rss_res}")
+        except Exception as e:
+            print(f"     > RSS error: {e}")
             
-            # Fallback for Llama 3.2 schema confusion
-            if not q or q == "{'type': 'string'}":
-                # Check if the LLM provided more info in the args
-                q = tool_args.get('__arg1', tool_args.get('input', 'AI Trends 2026'))
-            
-            # Convert to string just in case
-            q = str(q)
-            # -------------------------------
+    # 3. Always check internal docs for the MAIN topic (RAG)
+    try:
+        doc_res = lookup_policy_docs.invoke(topic)
+        if "No relevant" not in doc_res:
+             research_findings.append(f"Source: Internal Database (Topic: {topic})\nData: {doc_res}")
+    except Exception:
+        pass
 
-            if tool_name == "lookup_policy_docs":
-                res = lookup_policy_docs.invoke(q)
-            elif tool_name == "web_search_stub":
-                res = web_search_stub.invoke(q)
-            elif tool_name == "rss_feed_search":
-                res = rss_feed_search.invoke(q)
-            
-            research_findings.append(f"Source: {tool_name}\nData: {res}")
-    else:
-        research_findings.append("AGENT: The researcher agent did not call any specific tools for this query. This might happen if the topic is too broad or if the model thinks it has sufficient internal knowledge.")
+    if not research_findings:
+        research_findings.append("AGENT: Could not find significant new data. Returning base knowledge.")
 
-    print(f"   > Researcher found {len(research_findings)} items.")
+    print(f"   > Researcher found {len(research_findings)} comprehensive items.")
+    
+    from langchain_core.messages import AIMessage
+    msg = AIMessage(content=f"I have completed a comprehensive research plan using {len(queries)} diverse queries: {', '.join(queries)}. I found {len(research_findings)} distinct data sources.")
+
     return {
-        "messages": [response], 
+        "messages": [msg], 
         "research_data": research_findings
     }
 
@@ -90,8 +104,8 @@ def analyst_node(state: AgentState):
     
     # Note: We use a standard LLM invocation here (no tools bound)
     # because the Analyst only needs to think, not act.
-    prompt = f"""You are a senior analyst. 
-    1. Identify 3 key trends from the raw data.
+    prompt = f"""You are a senior expert analyst. 
+    1. Provide an elaborative, advanced synthesis of the raw data. Identify 4-5 key trends and explain their deep implications.
     2. DATA VIZ EXTRACTION: Look for REAL numeric trends (percentages, market sizes, years).
        If you find numeric data, extract it into a JSON block like this:
        ```json
@@ -100,7 +114,7 @@ def analyst_node(state: AgentState):
     
     CRITICAL: If the raw data is empty or insufficient, DO NOT make up hypothetical numbers. Only extract data that is EXPLICITLY present.
     
-    RAW DATA:
+    Here is the comprehensive research data gathered across multiple sub-queries and platforms:
     {raw_data}
     """
     
@@ -130,11 +144,12 @@ def writer_node(state: AgentState):
     print("\n--- [Agent: Writer] is formatting the newsletter ---")
     analyst_insight = state["messages"][-1].content
     
-    prompt = f"""You are a newsletter editor. 
-    Compile the trends into a polite, professional HTML format.
+    prompt = f"""You are an elite technology newsletter editor. 
+    Compile the advanced analysis into an elaborate, professional HTML format.
+    Make it look like a premium Substack or TechCrunch deep-dive. Use semantic HTML, clean structured headings, bullet points, and sophisticated language.
     
     CRITICAL: Preserve all links provided in the analysis (e.g., [Title](URL)).
-    Format them as clickable <a> tags in the HTML.
+    Format them as clickable <a> tags in the HTML. DO NOT wrap the output in markdown code blocks (e.g. ```html), ONLY return raw HTML.
     
     TRENDS & ANALYSIS:
     {analyst_insight}

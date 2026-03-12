@@ -1,54 +1,94 @@
 import os
-from langchain_community.document_loaders import PyPDFDirectoryLoader
-from langchain_text_splitters import RecursiveCharacterTextSplitter
-from langchain_chroma import Chroma
+import json
 
 # --- Configuration ---
 DATA_PATH = r"D:\NIE_GENai\Capstone_Project\NewsNexus\data\raw_pdfs"
 DB_PATH = r"D:\NIE_GENai\Capstone_Project\NewsNexus\data\chroma_db"
+PROGRESS_FILE = os.path.join(DB_PATH, "ingestion_progress.json")
 
-def ingest_documents():
-    # 1. Load Documents (Day 3: Data Loading)
+def get_progress():
+    if os.path.exists(PROGRESS_FILE):
+        try:
+            with open(PROGRESS_FILE, "r") as f:
+                return json.load(f)
+        except: pass
+    return {"processed_chunks": 0, "total_chunks": 0, "is_complete": False}
+
+def save_progress(processed, total, complete=False):
+    os.makedirs(DB_PATH, exist_ok=True)
+    with open(PROGRESS_FILE, "w") as f:
+        json.dump({"processed_chunks": processed, "total_chunks": total, "is_complete": complete}, f)
+
+def ingest_documents(progress_callback=None, resume=True):
+    from langchain_community.document_loaders import PyPDFDirectoryLoader
+    from langchain_text_splitters import RecursiveCharacterTextSplitter
+    from langchain_chroma import Chroma
+    # 1. Load Documents
     print(f"Loading PDFs from {DATA_PATH}...")
     loader = PyPDFDirectoryLoader(DATA_PATH)
     raw_documents = loader.load()
     print(f"Loaded {len(raw_documents)} pages.")
-
-    # 2. Split Text (Day 3: Chunking Strategies)
-    # We use overlapping chunks to maintain context across boundaries [cite: 45]
+    
+    # 2. Split Text
     text_splitter = RecursiveCharacterTextSplitter(
-        chunk_size=500,      # Balance between context and precision
-        chunk_overlap=50,    # Overlap to prevent data loss at edges
+        chunk_size=500,
+        chunk_overlap=50,
         length_function=len,
-        is_separator_regex=False,
     )
     chunks = text_splitter.split_documents(raw_documents)
-    print(f"Split into {len(chunks)} chunks.")
+    total_chunks = len(chunks)
+    print(f"Total chunks to process: {total_chunks}")
 
-    # 3. Initialize Embeddings (Switched to Ollama for stability)
+    # 3. Resume Logic
+    start_chunk = 0
+    if resume:
+        prog = get_progress()
+        if prog["total_chunks"] == total_chunks and not prog["is_complete"]:
+            start_chunk = prog["processed_chunks"]
+            print(f"Resuming from chunk {start_chunk}...")
+
+    # 4. Initialize Embeddings & Vector Store
     from langchain_ollama import OllamaEmbeddings
     embedding_model = OllamaEmbeddings(model="nomic-embed-text")
-
-    # 4. Create Vector Store with Batching (Day 2: Vector Databases)
-    print("Initializing Vector Store (this may take a few minutes for large PDFs)...")
     
-    # Initialize an empty vector store first
     vector_db = Chroma(
         embedding_function=embedding_model,
         persist_directory=DB_PATH
     )
 
-    # Batch size (Smaller batches are safer for Ollama)
-    BATCH_SIZE = 100
-    total_chunks = len(chunks)
+    # 5. Micro-Batching (10 chunks for extreme stability)
+    BATCH_SIZE = 10
+    import time
+    import gc
+
+    total_batches = (total_chunks - start_chunk - 1) // BATCH_SIZE + 1
     
-    for i in range(0, total_chunks, BATCH_SIZE):
+    if progress_callback: progress_callback(0.3 if start_chunk == 0 else (start_chunk/total_chunks), f"Starting from chunk {start_chunk}...")
+
+    for i in range(start_chunk, total_chunks, BATCH_SIZE):
         batch = chunks[i : i + BATCH_SIZE]
-        print(f"   > Processing batch {i // BATCH_SIZE + 1} of {(total_chunks-1) // BATCH_SIZE + 1} ({len(batch)} chunks)...")
-        vector_db.add_documents(batch)
+        batch_num = (i - start_chunk) // BATCH_SIZE + 1
+        
+        current_chunk_count = i + len(batch)
+        msg = f"Progress: {current_chunk_count}/{total_chunks} chunks..."
+        print(f"   > {msg}")
+        
+        try:
+            vector_db.add_documents(batch)
+            save_progress(current_chunk_count, total_chunks, complete=(current_chunk_count == total_chunks))
+        except Exception as e:
+            print(f"   ! Error at chunk {i}: {e}")
+            raise e
+
+        if progress_callback:
+            progress = 0.3 + (current_chunk_count / total_chunks) * 0.7
+            progress_callback(min(progress, 1.0), msg)
+        
+        gc.collect()
+        time.sleep(0.3)
     
-    print("Vector Store created successfully.")
-    return len(raw_documents), len(chunks)
+    print("Vector Store updated successfully.")
+    return len(raw_documents), total_chunks
 
 if __name__ == "__main__":
     # Ensure directory exists
